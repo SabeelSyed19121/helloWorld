@@ -31,5 +31,3 @@ HTML_PAGE = """
 """
 
 @app.route("/")
-
-
