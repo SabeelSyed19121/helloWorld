@@ -7,68 +7,78 @@ pipeline {
   }
 
   environment {
-    TARGET_MERGE_BRANCH = 'multi'  // Stage 2 target
-    MAIN_BRANCH         = 'main'   // Stage 3 target
+    SOURCE_BRANCH = 'multi' // Stage 1 & merge source
+    TARGET_BRANCH = 'main'  // Stage 2 target & Stage 3 checkout
   }
 
   stages {
 
-    stage('Stage 1: Checkout & Hello') {
+    stage('Stage 1: Checkout multi & say hello') {
       steps {
-        // Uses Multibranch SCM configuration
+        // Use job/folder SCM config (no credentials in code)
         checkout scm
 
         sh '''
-          set -euo pipefail
-          echo "Current branch: ${BRANCH_NAME}"
+          set -euxo pipefail
+
+          echo "Fetching remote refs ..."
+          git fetch --all --prune
+
+          echo "Checking out ${SOURCE_BRANCH} ..."
+          git checkout -B "${SOURCE_BRANCH}" "origin/${SOURCE_BRANCH}"
+
           echo "hello success"
+          echo "Stage 1 successful: ran echo on ${SOURCE_BRANCH}"
         '''
       }
     }
 
-    stage('Stage 2: Merge current branch into multi') {
-      when {
-        expression { env.BRANCH_NAME && env.BRANCH_NAME != env.TARGET_MERGE_BRANCH }
-      }
+    stage('Stage 2: Merge multi -> main') {
       steps {
         sh '''
           set -euxo pipefail
 
-          echo "Fetching latest from origin..."
+          echo "Syncing ${TARGET_BRANCH} ..."
           git fetch origin
 
-          echo "Checking out target branch: ${TARGET_MERGE_BRANCH} ..."
-          git checkout -B "${TARGET_MERGE_BRANCH}" "origin/${TARGET_MERGE_BRANCH}"
+          echo "Switching to ${TARGET_BRANCH} ..."
+          git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}"
 
-          echo "Merging ${BRANCH_NAME} -> ${TARGET_MERGE_BRANCH} ..."
-          git merge --no-ff --no-edit "origin/${BRANCH_NAME}"
+          echo "Merging ${SOURCE_BRANCH} into ${TARGET_BRANCH} ..."
+          git merge --no-ff --no-edit "origin/${SOURCE_BRANCH}"
 
-          echo "Pushing ${TARGET_MERGE_BRANCH} to origin ..."
-          git push origin "${TARGET_MERGE_BRANCH}"
+          echo "Pushing ${TARGET_BRANCH} to origin ..."
+          git push origin "${TARGET_BRANCH}"
 
-          echo "Merge to ${TARGET_MERGE_BRANCH} successful ✅"
+          echo "Stage 2 successful: merged ${SOURCE_BRANCH} -> ${TARGET_BRANCH} ✅"
         '''
       }
     }
 
-    stage('Stage 3: Checkout main & run hello.py') {
+    stage('Stage 3: Checkout main & run file1.txt') {
       steps {
         sh '''
           set -euxo pipefail
 
-          echo "Syncing ${MAIN_BRANCH} ..."
+          echo "Ensuring latest ${TARGET_BRANCH} ..."
           git fetch origin
-          git checkout -B "${MAIN_BRANCH}" "origin/${MAIN_BRANCH}"
-          git reset --hard "origin/${MAIN_BRANCH}"
+          git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}"
+          git reset --hard "origin/${TARGET_BRANCH}"
 
-          if [ -f hello.py ]; then
-            echo "Running hello.py on ${MAIN_BRANCH} ..."
-            python3 hello.py
-            echo "hello.py executed successfully on ${MAIN_BRANCH} ✅"
-          else
-            echo "ERROR: hello.py not found on ${MAIN_BRANCH}"
+          if [ ! -f file1.txt ]; then
+            echo "ERROR: file1.txt not found on ${TARGET_BRANCH}"
             exit 1
           fi
+
+          # Make executable if needed, then run; if it isn't a script, run via bash
+          chmod +x file1.txt || true
+          if head -n1 file1.txt | grep -qE '^#!'; then
+            ./file1.txt
+          else
+            bash file1.txt
+          fi
+
+          echo "Stage 3 successful: file1.txt executed on ${TARGET_BRANCH} ✅"
         '''
       }
     }
