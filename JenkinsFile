@@ -1,41 +1,83 @@
 
 pipeline {
-    agent any
-    stages {
-    
-	
-	stage('Checkout') {
- 		 steps { checkout scm }
-	}
+  agent any
 
-        stage('Run: Generate 1..10') {
-            steps {
-                sh 'python3 numbers_source.py'
-                // Windows alternative:
-                // bat 'python numbers_source.py'
-            }
-        }
+  options {
+    timestamps()
+  }
 
-        stage('Run: Check Even/Odd') {
-            steps {
-                sh 'python3 check_even_odd.py'
-                // Windows alternative:
-                // bat 'python check_even_odd.py'
-            }
-        }
+  environment {
+    TARGET_MERGE_BRANCH = 'multi'  // Stage 2 target
+    MAIN_BRANCH         = 'main'   // Stage 3 target
+  }
+
+  stages {
+
+    stage('Stage 1: Checkout & Hello') {
+      steps {
+        // Uses Multibranch SCM configuration
+        checkout scm
+
+        sh '''
+          set -euo pipefail
+          echo "Current branch: ${BRANCH_NAME}"
+          echo "hello success"
+        '''
+      }
     }
 
-    post {
-        success {
-            echo 'Pipeline completed successfully ✅'
-        }
-        failure {
-            echo 'Pipeline failed ❌'
-        }
-        always {
-            echo 'execution comleted'
-        }
+    stage('Stage 2: Merge current branch into multi') {
+      when {
+        expression { env.BRANCH_NAME && env.BRANCH_NAME != env.TARGET_MERGE_BRANCH }
+      }
+      steps {
+        sh '''
+          set -euxo pipefail
+
+          echo "Fetching latest from origin..."
+          git fetch origin
+
+          echo "Checking out target branch: ${TARGET_MERGE_BRANCH} ..."
+          git checkout -B "${TARGET_MERGE_BRANCH}" "origin/${TARGET_MERGE_BRANCH}"
+
+          echo "Merging ${BRANCH_NAME} -> ${TARGET_MERGE_BRANCH} ..."
+          git merge --no-ff --no-edit "origin/${BRANCH_NAME}"
+
+          echo "Pushing ${TARGET_MERGE_BRANCH} to origin ..."
+          git push origin "${TARGET_MERGE_BRANCH}"
+
+          echo "Merge to ${TARGET_MERGE_BRANCH} successful ✅"
+        '''
+      }
     }
+
+    stage('Stage 3: Checkout main & run hello.py') {
+      steps {
+        sh '''
+          set -euxo pipefail
+
+          echo "Syncing ${MAIN_BRANCH} ..."
+          git fetch origin
+          git checkout -B "${MAIN_BRANCH}" "origin/${MAIN_BRANCH}"
+          git reset --hard "origin/${MAIN_BRANCH}"
+
+          if [ -f hello.py ]; then
+            echo "Running hello.py on ${MAIN_BRANCH} ..."
+            python3 hello.py
+            echo "hello.py executed successfully on ${MAIN_BRANCH} ✅"
+          else
+            echo "ERROR: hello.py not found on ${MAIN_BRANCH}"
+            exit 1
+          fi
+        '''
+      }
+    }
+  }
+
+  post {
+    success { echo 'Pipeline completed successfully ✅' }
+    failure { echo 'Pipeline failed ❌' }
+    always  { echo 'execution completed' }
+  }
 }
-
 
