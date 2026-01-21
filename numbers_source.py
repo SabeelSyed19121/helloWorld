@@ -13,5 +13,4 @@ def get_numbers() -> list[int]:
 if __name__ == "__main__":
     for n in get_numbers():
         print(n)
-``
 
