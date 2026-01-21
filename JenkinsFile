@@ -1,0 +1,41 @@
+
+pipeline {
+    agent any
+    stages {
+    
+	
+	stage('Checkout') {
+ 		 steps { checkout scm }
+	}
+
+        stage('Run: Generate 1..10') {
+            steps {
+                sh 'python3 numbers_source.py'
+                // Windows alternative:
+                // bat 'python numbers_source.py'
+            }
+        }
+
+        stage('Run: Check Even/Odd') {
+            steps {
+                sh 'python3 check_even_odd.py'
+                // Windows alternative:
+                // bat 'python check_even_odd.py'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Pipeline completed successfully ✅'
+        }
+        failure {
+            echo 'Pipeline failed ❌'
+        }
+        always {
+            echo 'execution comleted'
+        }
+    }
+}
+
+
