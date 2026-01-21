@@ -7,20 +7,20 @@ pipeline {
   }
 
   environment {
-    SOURCE_BRANCH = 'multi' // Stage 1 & merge source
-    TARGET_BRANCH = 'main'  // Stage 2 target & Stage 3 checkout
+    SOURCE_BRANCH = 'multi' // Stage 1 source & Stage 2 merge-from
+    TARGET_BRANCH = 'main'  // Stage 2 merge-to & Stage 3 branch
   }
 
   stages {
 
     stage('Stage 1: Checkout multi & say hello') {
       steps {
-        // Use job/folder SCM config (no credentials in code)
+        // Uses Multibranch/SCM config (no credentials inline)
         checkout scm
 
+        // Use bash so 'pipefail' is supported
         sh '''
-          set -euxo pipefail
-
+          bash -euo pipefail <<'BASH'
           echo "Fetching remote refs ..."
           git fetch --all --prune
 
@@ -29,6 +29,7 @@ pipeline {
 
           echo "hello success"
           echo "Stage 1 successful: ran echo on ${SOURCE_BRANCH}"
+          BASH
         '''
       }
     }
@@ -36,8 +37,7 @@ pipeline {
     stage('Stage 2: Merge multi -> main') {
       steps {
         sh '''
-          set -euxo pipefail
-
+          bash -euo pipefail <<'BASH'
           echo "Syncing ${TARGET_BRANCH} ..."
           git fetch origin
 
@@ -51,6 +51,7 @@ pipeline {
           git push origin "${TARGET_BRANCH}"
 
           echo "Stage 2 successful: merged ${SOURCE_BRANCH} -> ${TARGET_BRANCH} ✅"
+          BASH
         '''
       }
     }
@@ -58,8 +59,7 @@ pipeline {
     stage('Stage 3: Checkout main & run file1.txt') {
       steps {
         sh '''
-          set -euxo pipefail
-
+          bash -euo pipefail <<'BASH'
           echo "Ensuring latest ${TARGET_BRANCH} ..."
           git fetch origin
           git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}"
@@ -70,15 +70,12 @@ pipeline {
             exit 1
           fi
 
-          # Make executable if needed, then run; if it isn't a script, run via bash
-          chmod +x file1.txt || true
-          if head -n1 file1.txt | grep -qE '^#!'; then
-            ./file1.txt
-          else
-            bash file1.txt
-          fi
+          echo "Running file1.txt on ${TARGET_BRANCH} ..."
+          # Run with bash so it doesn't need +x or a shebang
+          bash file1.txt
 
           echo "Stage 3 successful: file1.txt executed on ${TARGET_BRANCH} ✅"
+          BASH
         '''
       }
     }
