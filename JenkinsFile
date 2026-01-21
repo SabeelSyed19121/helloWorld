@@ -2,23 +2,20 @@
 pipeline {
   agent any
 
-  options {
-    timestamps()
-  }
+  options { timestamps() }
 
   environment {
-    SOURCE_BRANCH = 'multi' // Stage 1 source & Stage 2 merge-from
-    TARGET_BRANCH = 'main'  // Stage 2 merge-to & Stage 3 branch
+    SOURCE_BRANCH = 'multi' // Stage 1 & merge source
+    TARGET_BRANCH = 'main'  // Stage 2 target & Stage 3 checkout
   }
 
   stages {
-
     stage('Stage 1: Checkout multi & say hello') {
       steps {
-        // Uses Multibranch/SCM config (no credentials inline)
+        // Uses Multibranch SCM configuration
         checkout scm
 
-        // Use bash so 'pipefail' is supported
+        // Use bash (dash doesn't support `pipefail`)
         sh '''
           bash -euo pipefail <<'BASH'
           echo "Fetching remote refs ..."
@@ -36,47 +33,54 @@ pipeline {
 
     stage('Stage 2: Merge multi -> main') {
       steps {
-        sh '''
-          bash -euo pipefail <<'BASH'
-          echo "Syncing ${TARGET_BRANCH} ..."
-          git fetch origin
+        // Wrap git operations that require auth with Jenkins credentials
+        sshagent(credentials: ['2666982']) {
+          sh '''
+            bash -euo pipefail <<'BASH'
+            echo "Syncing ${TARGET_BRANCH} ..."
+            git fetch origin
 
-          echo "Switching to ${TARGET_BRANCH} ..."
-          git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}"
+            echo "Switching to ${TARGET_BRANCH} ..."
+            git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}"
 
-          echo "Merging ${SOURCE_BRANCH} into ${TARGET_BRANCH} ..."
-          git merge --no-ff --no-edit "origin/${SOURCE_BRANCH}"
+            echo "Merging ${SOURCE_BRANCH} into ${TARGET_BRANCH} ..."
+            git merge --no-ff --no-edit "origin/${SOURCE_BRANCH}"
 
-          echo "Pushing ${TARGET_BRANCH} to origin ..."
-          git push origin "${TARGET_BRANCH}"
+            echo "Pushing ${TARGET_BRANCH} to origin ..."
+            git push origin "${TARGET_BRANCH}"
 
-          echo "Stage 2 successful: merged ${SOURCE_BRANCH} -> ${TARGET_BRANCH} ✅"
-          BASH
-        '''
+            echo "Stage 2 successful: merged ${SOURCE_BRANCH} -> ${TARGET_BRANCH} ✅"
+            BASH
+          '''
+        }
       }
     }
 
     stage('Stage 3: Checkout main & run file1.txt') {
       steps {
-        sh '''
-          bash -euo pipefail <<'BASH'
-          echo "Ensuring latest ${TARGET_BRANCH} ..."
-          git fetch origin
-          git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}"
-          git reset --hard "origin/${TARGET_BRANCH}"
+        // Reading from origin is OK without extra wrapping, but to be safe
+        // (some providers require auth even for fetch) we can reuse the same SSH identity.
+        sshagent(credentials: ['2666982']) {
+          sh '''
+            bash -euo pipefail <<'BASH'
+            echo "Ensuring latest ${TARGET_BRANCH} ..."
+            git fetch origin
+            git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}"
+            git reset --hard "origin/${TARGET_BRANCH}"
 
-          if [ ! -f file1.txt ]; then
-            echo "ERROR: file1.txt not found on ${TARGET_BRANCH}"
-            exit 1
-          fi
+            if [ ! -f file1.txt ]; then
+              echo "ERROR: file1.txt not found on ${TARGET_BRANCH}"
+              exit 1
+            fi
 
-          echo "Running file1.txt on ${TARGET_BRANCH} ..."
-          # Run with bash so it doesn't need +x or a shebang
-          bash file1.txt
+            echo "Running file1.txt on ${TARGET_BRANCH} ..."
+            # Run with bash so it doesn't need +x or a shebang
+            bash file1.txt
 
-          echo "Stage 3 successful: file1.txt executed on ${TARGET_BRANCH} ✅"
-          BASH
-        '''
+            echo "Stage 3 successful: file1.txt executed on ${TARGET_BRANCH} ✅"
+            BASH
+          '''
+        }
       }
     }
   }
@@ -87,4 +91,5 @@ pipeline {
     always  { echo 'execution completed' }
   }
 }
+``
 
